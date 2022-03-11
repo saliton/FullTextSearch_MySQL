@@ -246,6 +246,8 @@ db.close()
 like検索でシーケンシャルに検索した場合を測定します。mysqlコマンドに-vvvオプションを付けると、出力の最後から3行目にマッチ数と処理時間が出力されるので、その部分だけをtailコマンドとheadコマンドで切り出しています。
 
 
+まずはインデックスを使っていないことを確認します。
+
 ```shell
 !echo "explain select sql_no_cache * from db.wiki_jp where body like '%日本語%'" | mysql
 ```
@@ -253,7 +255,31 @@ like検索でシーケンシャルに検索した場合を測定します。mysq
     id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
     1	SIMPLE	wiki_jp	NULL	ALL	NULL	NULL	NULL	NULL	271545	11.11	Using where
 
+bodyに「日本語」を含むレコードの数を取得します。
 
+
+```python
+%%time
+!echo "select sql_no_cache count(*) from db.wiki_jp where body like '%日本語%'" | mysql -vvv
+```
+
+    --------------
+    select sql_no_cache count(*) from db.wiki_jp where body like '%日本語%'
+    --------------
+    
+    +----------+
+    | count(*) |
+    +----------+
+    |    17006 |
+    +----------+
+    1 row in set, 1 warning (11.47 sec)
+    
+    Bye
+    CPU times: user 107 ms, sys: 19.5 ms, total: 127 ms
+    Wall time: 11.6 s
+
+
+bodyに「日本語」を含むレコードを取得します。
 
 ```shell
 %%time
@@ -264,7 +290,7 @@ like検索でシーケンシャルに検索した場合を測定します。mysq
     CPU times: user 126 ms, sys: 19.5 ms, total: 146 ms
     Wall time: 13.6 s
 
-
+2回目
 
 ```shell
 %%time
@@ -275,7 +301,7 @@ like検索でシーケンシャルに検索した場合を測定します。mysq
     CPU times: user 121 ms, sys: 16.8 ms, total: 138 ms
     Wall time: 13.8 s
 
-
+インデックスを使わない場合、単に数を集計するだけでもbodyにアクセスしなければならないので、処理時間はあまり変わりません。
 ## 全文検索用インデックスの作成
 
 インデックスの作成には60分ほどかかります。
@@ -297,6 +323,7 @@ like検索でシーケンシャルに検索した場合を測定します。mysq
 
 ## インデックスを使った検索
 
+まずはインデックスを使っていることを確認します。
 
 ```shell
 !echo "explain select sql_no_cache * from db.wiki_jp where match (body) against ('日本語' in boolean mode)" | mysql
@@ -306,29 +333,72 @@ like検索でシーケンシャルに検索した場合を測定します。mysq
     1	SIMPLE	wiki_jp	NULL	fulltext	ngram_idx	ngram_idx	0	const	1	100.00	Using where; Ft_hints: no_ranking
 
 
+bodyに「日本語」を含むレコードの数を取得します。
+
+
+```python
+%%time
+!echo "select sql_no_cache count(*) from db.wiki_jp where match (body) against ('日本語' in boolean mode)" | mysql -vvv
+```
+
+    --------------
+    select sql_no_cache count(*) from db.wiki_jp where match (body) against ('日本語' in boolean mode)
+    --------------
+    
+    +----------+
+    | count(*) |
+    +----------+
+    |    17006 |
+    +----------+
+    1 row in set, 1 warning (2.45 sec)
+    
+    Bye
+    CPU times: user 22.2 ms, sys: 12 ms, total: 34.2 ms
+    Wall time: 2.53 s
+
+
+bodyに「日本語」を含むレコードを取得します。
 
 ```shell
 %%time
 !echo "select sql_no_cache * from db.wiki_jp where match (body) against ('日本語' in boolean mode)" | mysql -vvv | tail -3 | head -1
 ```
 
-    17006 rows in set, 1 warning (15.46 sec)
-    CPU times: user 152 ms, sys: 28.2 ms, total: 180 ms
-    Wall time: 19.2 s
+    17006 rows in set, 1 warning (4.31 sec)
+    CPU times: user 73.3 ms, sys: 14.2 ms, total: 87.5 ms
+    Wall time: 8.05 s
 
 
+2回目
 
 ```shell
 %%time
 !echo "select sql_no_cache * from db.wiki_jp where match (body) against ('日本語' in boolean mode)" | mysql -vvv | tail -3 | head -1
 ```
 
-    17006 rows in set, 1 warning (4.43 sec)
-    CPU times: user 74.5 ms, sys: 17.4 ms, total: 91.9 ms
-    Wall time: 8.35 s
+    17006 rows in set, 1 warning (3.97 sec)
+    CPU times: user 60.8 ms, sys: 14.2 ms, total: 75 ms
+    Wall time: 7.65 s
 
 
-1回目が2回目よりも倍かかっているので、インデックスの作成時にデータがメモリから追い出されていると思われます。メモリに載っていない状態で、メモリに載ったインデックスなしの検索と同程度の処理時間です。メモリに載っている2回目では、半分の処理時間なので、インデックスの効果が確認できます。
+数の集計はまあまあ速いですが、他と比べると断然遅い。数の集計の場合でもインデックスだけで処理が済まず、bodyにアクセスしているのかもしれません。インデックスを使っても、使わない場合の半分にもならないのはいかがなものかと。
+
+
+
+参考までにidとtitleのみを取得してみます。
+
+
+```python
+%%time
+!echo "select sql_no_cache id title from db.wiki_jp where match (body) against ('日本語' in boolean mode)" | mysql -vvv | tail -3 | head -1
+```
+
+    17006 rows in set, 1 warning (3.03 sec)
+    CPU times: user 33.8 ms, sys: 6.21 ms, total: 40 ms
+    Wall time: 3.13 s
+
+
+大して速くなりません。これはMySQLの欠点と言っても過言ではありませんね。
 
 ## DBの停止
 
@@ -339,4 +409,3 @@ like検索でシーケンシャルに検索した場合を測定します。mysq
 
      * Stopping MySQL database server mysqld
        ...done.
-
