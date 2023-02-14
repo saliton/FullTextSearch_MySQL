@@ -1,4 +1,4 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Soliton-Analytics-Team/FullTextSearch_MySQL/blob/main/FullTextSearch_MySQL.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/saliton/FullTextSearch_MySQL/blob/main/FullTextSearch_MySQL.ipynb)
 
 # Colabで全文検索（その１：MySQL編）
 
